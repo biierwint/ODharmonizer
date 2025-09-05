@@ -38,6 +38,7 @@ ODharmonizer/
 |-- ODmapper/               # ODmapper Project folder
 |-- ODannotator/            # ODannotator Project folder
 |-- ODconverter/            # ODconverter Project folder
+|-- ODdashboard/            # ODdashboard Project folder
 |-- data-repositories/      # Database dump and SeqRepo data
 |-- compose.yml             # Docker compose file
 |-- README.md               # Readme file
