@@ -1,0 +1,286 @@
+# Copyright (C) 2025 A*STAR
+
+# ODmapper (Omics Data Mapping and Harmonizer) is an effort by the
+# Data Management Platform in the Bioinformatics Institute (BII),
+# Agency of Science, Technology and Research (A*STAR), Singapore.
+
+# This file is part of ODmapper.
+
+# ODmapper is an open-source tool.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0 you can redistribute it and/or modify
+# it under the terms of the https://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# You should have received a copy of the Apache License, Version 2.0
+# along with this program.  If not, see <https://www.apache.org/licenses/LICENSE-2.0>
+
+from rest_framework import status, mixins, generics
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.parsers import FormParser, MultiPartParser
+
+from django.http import Http404
+from django.shortcuts import render
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+
+from odmapper.models import Concept, ConceptSynonym
+from odmapper.serializers import ConceptSerializer, ConceptSynonymSerializer
+from odmapper.forms import ConceptForm
+
+# authentication and permission purpose
+from django.contrib.auth.models import User
+from rest_framework import permissions
+
+### Mixin for filtering queryset based on lookup_fields
+class MultipleFieldLookupMixin:
+    """
+    Apply this mixin to any view or viewset to get multiple field filtering
+    based on a `lookup_fields` attribute, instead of the default single field filtering.
+    """
+    def get_object(self):
+        queryset = self.get_queryset()             # Get the base queryset
+        queryset = self.filter_queryset(queryset)  # Apply any filter backends
+        filter = {}
+        for field in self.lookup_fields:
+            if self.kwargs.get(field): # Ignore empty fields.
+                filter[field] = self.kwargs[field]
+        obj = get_object_or_404(queryset, **filter)  # Lookup the object
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+### Retrieve concept id detail
+class ConceptDetail(MultipleFieldLookupMixin, generics.RetrieveAPIView):
+    """
+    Retrieve a concept id detail.
+    """
+    #authentication_classes = [JWTAuthentication]
+    #permission_classes = [permissions.IsAuthenticated]
+
+    queryset = Concept.objects.all()
+    serializer_class = ConceptSerializer
+    lookup_fields = ['concept_id']
+
+### Retrieve concept ids based on string contains within "concept_id", "concept_code" and "concept_name"
+class ConceptSeekList(generics.ListAPIView):
+    """
+    Retrieve a list of concepts based on query_string contains within concept_id, concept_code and concept_name.
+    """
+    #authentication_classes = [JWTAuthentication]
+    #permission_classes = [permissions.IsAuthenticated]
+
+    serializer_class = ConceptSerializer
+
+    def get_queryset (self):
+        self.query_text = self.kwargs['query_text']
+        queryset =  Concept.objects.all().filter(Q(concept_name__iregex=rf'\m{self.query_text}\M') | Q(concept_id__iregex=rf'\m{self.query_text}\M') | Q(concept_code__iregex=rf'\m{self.query_text}\M')).distinct()
+        return queryset
+
+    def get_object (self):
+        return get_object_or_404 (self.get_queryset(), id=self.query_text)
+
+
+
+### Retrieve concept ids based on concept_synonym_name
+class ConceptSynonymList(generics.ListAPIView):
+    """
+    Retrieve a list of concepts based on concept_synonym_name.
+    """
+    #authentication_classes = [JWTAuthentication]
+    #permission_classes = [permissions.IsAuthenticated]
+
+    serializer_class = ConceptSynonymSerializer
+
+    def get_queryset (self):
+        self.synonym = self.kwargs['synonym']
+        queryset = ConceptSynonym.objects.filter(concept_synonym_name=self.synonym).select_related('concept_id')
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        count = queryset.count()
+
+        if count == 0:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        elif count > 1:
+            return Response({'error': 'Multiple results found (data inconsistency). Use query tool to search for multiple hits.'},
+                            status=status.HTTP_409_CONFLICT)
+
+        serializer = self.get_serializer(queryset.first())
+        return Response(serializer.data)
+
+    #def get_object (self):
+    #    return get_object_or_404 (self.get_queryset(), id=self.synonym)
+
+class ConceptLookupView(generics.ListAPIView):
+    serializer_class = ConceptSerializer
+
+    FEATURE_TO_CONCEPT_CLASS = {
+        "gene": "Gene",
+        "transcript": "RNA",
+        "protein": "Protein",
+    }
+
+    model_map = {
+        "gene": Concept,
+        "transcript": Concept,
+        "protein": Concept,
+    }
+
+    def get_queryset(self):
+        feature = self.kwargs.get("feature")
+        vocabulary = self.kwargs.get("vocabulary")
+        name = self.kwargs.get("concept_code")
+        base_code = name.split('.')[0] # remove the version from "name" if available.
+
+        if feature not in self.model_map:
+            return self.model_map["gene"].objects.none()  # Return empty queryset or handle error elsewhere
+
+        concept_class_id = self.FEATURE_TO_CONCEPT_CLASS.get(feature)
+        Model = self.model_map[feature]
+
+        queryset = Model.objects.filter(
+            concept_class_id=concept_class_id,
+            vocabulary_id__iexact=vocabulary,
+            #concept_code__iexact=name,
+            concept_code__regex=rf'^{base_code}(\.\d+)?$',
+        )
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        count = queryset.count()
+
+        if count == 0:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        elif count > 1:
+            return Response({'error': 'Multiple results found (data inconsistency)'},
+                            status=status.HTTP_409_CONFLICT)
+
+        serializer = self.get_serializer(queryset.first())
+        return Response(serializer.data)
+
+### Query Concept according to "Concept ID", "Synonym" and "Default (Concept_Name, Concept_Code, Synonym, Concept ID)"
+class ConceptQuery_deprecated(APIView):
+
+    #authentication_classes = [JWTAuthentication]
+    #permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        query_text = request.query_params.get("query_text", None)
+        searchtype = request.query_params.get("type", None)
+
+        try:
+            if searchtype == 'default':
+                concepts = Concept.objects.all().filter(Q(concept_id__icontains=query_text) | Q(concept_name__icontains=query_text) | Q(concept_code__icontains=query_text)).distinct()
+                synonyms = ConceptSynonym.objects.all().filter(concept_synonym_name__icontains=query_text)
+                if not concepts and not synonyms:
+                   return Response(status=status.HTTP_404_NOT_FOUND)
+                elif not concepts:
+                   serializer = ConceptSynonymSerializer(synonyms, many=True)
+                   return Response(serializer.data)
+                elif not synonyms:
+                   serializer = ConceptSerializer(concepts, many=True)
+                   return Response(serializer.data)
+                else:
+                    serializer_synonyms = ConceptSynonymSerializer(synonyms, many=True)
+                    serializer_concepts = ConceptSerializer(concepts, many=True)
+                    return Response({
+                        "Concepts": serializer_concepts.data,
+                        "Synonyms": serializer_synonyms.data
+                    })
+            elif searchtype == 'concept_id':
+                concepts = Concept.objects.get(pk=query_text)
+                serializer = ConceptSerializer(concepts)
+                return Response(serializer.data)
+            elif searchtype == 'concept_synonym':
+                #concepts = ConceptSynonym.objects.all().filter(concept_synonym_name=query_text)
+                concepts = ConceptSynonym.objects.filter(concept_synonym_name__icontains=query_text).select_related('concept_id')
+                if not concepts:
+                   return Response(status=status.HTTP_404_NOT_FOUND)
+                else:
+                   serializer = ConceptSynonymSerializer(concepts, many=True)
+                return Response(serializer.data)
+            elif searchtype == 'concept_code':
+                concepts = Concept.objects.all().filter(Q(concept_code__icontains=query_text)).distinct()
+                serializer = ConceptSerializer(concepts)
+                return Response(serializer.data)
+            else:
+                return render(request, "concept.html")
+        except:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+class ConceptQuery(generics.ListAPIView):
+    serializer_class = ConceptSerializer
+
+    CLASS_MAP = {
+        "gene": "Gene",
+        "transcript": "RNA",
+        "protein": "Protein",
+        "gene dna variant": "Gene DNA Variant",
+        "gene rna variant": "Gene RNA Variant",
+        "gene protein variant": "Gene Protein Variant"
+    }
+
+    def get_queryset(self):
+        keyword = self.request.query_params.get("keyword")
+        if not keyword:
+            return Concept.objects.none()  # Triggers homepage render in `list()`
+        search_type = self.request.query_params.get("search_type", "default").lower()
+        class_type = self.request.query_params.get("class_type", "default").lower()
+        vocab_type = self.request.query_params.get("vocab_type", "default")
+
+        if not keyword:
+            return Concept.objects.none()  # will result in empty 200
+
+        filters = {}
+
+        if class_type != "default":
+            filters["concept_class_id"] = self.CLASS_MAP.get(class_type)
+
+        if vocab_type.lower() != "default":
+            filters["vocabulary_id"] = vocab_type
+
+        if search_type == "concept_id":
+            filters["concept_id"] = keyword
+            return Concept.objects.filter(**filters)
+
+        elif search_type == "concept_synonym":
+            synonym_ids = ConceptSynonym.objects.filter(
+                concept_synonym_name__iexact=keyword
+            ).values_list("concept_id", flat=True)
+            return Concept.objects.filter(concept_id__in=synonym_ids, **filters)
+
+        elif search_type == "default":  # default: concept_id, concept_code, and concept_synonym_name
+            synonym_ids = ConceptSynonym.objects.filter(
+                concept_synonym_name__iexact=keyword
+            ).values_list("concept_id", flat=True)
+
+            return Concept.objects.filter(
+                (
+                    Q(concept_id__iexact=keyword) |
+                    Q(concept_code__iexact=keyword) |
+                    Q(concept_id__in=synonym_ids) |
+                    Q(concept_name__iregex=rf'\m{keyword}\M')
+                ),
+                **filters
+            )
+
+    def list(self, request, *args, **kwargs):
+        keyword = request.query_params.get("keyword")
+        if not keyword:
+            return render(request, "concept.html")
+
+        queryset = self.get_queryset()
+        if not queryset.exists():
+            return Response({"error": "No results found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)

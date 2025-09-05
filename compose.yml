@@ -1,0 +1,117 @@
+services:
+  odharmonizer-postgres:
+    image: postgres:16-alpine
+    container_name: odharmonizer-postgres
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    ports:
+      - "25432:5432"
+    volumes:
+      - odmapper-db:/var/lib/postgresql/data
+    env_file:
+      - .env
+
+  odharmonizer-odmapper:
+    build:
+      context: ./ODmapper
+      args:
+        HOST_UID: ${HOST_UID}
+        HOST_GID: ${HOST_GID}
+        USERNAME: ${USERNAME}
+    container_name: odmapper
+    image: odmapper:v1.0
+    ports:
+      - "8000:8000"
+    depends_on:
+      - odharmonizer-postgres
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DEBUG: ${DEBUG}
+      DJANGO_LOGLEVEL: ${DJANGO_LOGLEVEL}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS}
+      DATABASE_ENGINE: ${DATABASE_ENGINE}
+      DATABASE_NAME: ${DATABASE_NAME}
+      DATABASE_USERNAME: ${DATABASE_USERNAME}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_HOST: ${DATABASE_HOST}
+      DATABASE_PORT: ${DATABASE_PORT}
+      HOST_UID: ${HOST_UID}
+      HOST_GID: ${HOST_GID}
+      USERNAME: ${USERNAME}
+    env_file:
+      - .env
+
+  odharmonizer-annotator:
+    build:
+      context: ./ODannotator
+      args:
+        HOST_UID: ${HOST_UID}
+        HOST_GID: ${HOST_GID}
+        USERNAME: ${USERNAME}
+    container_name: odannotator
+    image: odannotator:v1.0
+    volumes:
+      - .:/odannotator/data:rw
+    command: tail -f /dev/null
+
+  odharmonizer-odconverter:
+    build:
+      context: ./ODconverter
+      args:
+        HOST_UID: ${HOST_UID}
+        HOST_GID: ${HOST_GID}
+        USERNAME: ${USERNAME}
+    container_name: odconverter
+    image: odconverter:v1.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./tmp:/odconverter/tmp:rw
+      - ./output:/odconverter/output:rw
+      - ./input:/odconverter/input:rw
+    depends_on:
+      - odharmonizer-postgres
+    environment:
+      DB_NAME: ${DATABASE_NAME}
+      DB_SCHEMA: ${DATABASE_SCHEMA}
+      DB_USER: ${DATABASE_USERNAME}
+      DB_PASSWORD: ${DATABASE_PASSWORD}
+      DB_HOST: ${DATABASE_HOST}
+      DB_PORT: ${DATABASE_PORT}
+      HOST_UID: ${HOST_UID}
+      HOST_GID: ${HOST_GID}
+      USERNAME: ${USERNAME}
+      ENABLE_FILE_DOWNLOAD: ${ENABLE_FILE_DOWNLOAD}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    env_file:
+      - .env
+      
+  seqrepo-rest-service:
+    # Test: curl http://localhost:5000/seqrepo/1/sequence/refseq:NM_000551.3
+    # image: biocommons/seqrepo-rest-service:0.2.2
+    image: biocommons/seqrepo-rest-service:0.2.2
+    container_name: seqrepo-rest-service
+    volumes:
+      - /usr/local/share/seqrepo/2024-02-20:/usr/local/share/seqrepo/2024-02-20
+    command: seqrepo-rest-service -w /usr/local/share/seqrepo/2024-02-20
+    network_mode: bridge
+    ports:
+      - 5000:5000
+
+  uta:
+    # Test: docker exec -it uta psql -XAt postgres://anonymous@localhost/uta -c 'select count(*) from uta_20241220.transcript'
+    # Test: psql -XAt postgres://anonymous@localhost:35432/uta -c 'select count(*) from uta_20241220.transcript'
+    image: biocommons/uta:uta_20241220
+    container_name: uta
+    environment:
+      - POSTGRES_PASSWORD=anonymous
+    volumes:
+      - uta_vol:/var/lib/postgresql/data
+    ports:
+      - 35432:5432
+volumes:
+  odmapper-db:
+  uta_vol:

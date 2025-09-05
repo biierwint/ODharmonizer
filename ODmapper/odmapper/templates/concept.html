@@ -1,0 +1,155 @@
+{% load static %}
+{% load i18n %}
+{% load rest_framework %}
+
+<!DOCTYPE html>
+<html>
+  <head>
+    {% block head %}
+
+      {% block meta %}
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+        <meta name="robots" content="NONE,NOARCHIVE" />
+      {% endblock %}
+
+      <title>{% block title %}{% if name %}{{ name }} – {% endif %}ODmapper v1.0{% endblock %}</title>
+
+      {% block style %}
+        {% block bootstrap_theme %}
+          <link rel="stylesheet" type="text/css" href="{% static "rest_framework/css/bootstrap.min.css" %}"/>
+          <link rel="stylesheet" type="text/css" href="{% static "rest_framework/css/bootstrap-tweaks.css" %}"/>
+        {% endblock %}
+
+        {% if code_style %}<style>{{ code_style }}</style>{% endif %}
+      {% endblock %}
+
+    {% endblock %}
+    <style>
+      select {
+        width: 200px;           /* Set a fixed width */
+        box-sizing: border-box; /* Ensure padding/border don't expand width */
+      }
+    </style>
+  </head>
+
+  {% block body %}
+  <body class="{% block bodyclass %}{% endblock %}">
+
+    <div class="wrapper">
+      {% block navbar %}
+        <div class="navbar navbar-static-top {% block bootstrap_navbar_variant %}navbar-inverse{% endblock %}"
+             role="navigation" aria-label="{% trans "navbar" %}">
+          <div class="container">
+            <span>
+              {% block branding %}
+                <a class='navbar-brand' rel="nofollow" href='/'>
+                    ODmapper - Omics Data Mapping and Harmonizer
+                </a>
+              {% endblock %}
+            </span>
+            <ul class="nav navbar-nav pull-right">
+              {% block userlinks %}
+                {% if user.is_authenticated %}
+                  {% optional_logout request user csrf_token %}
+                {% else %}
+                  {% optional_login request %}
+                {% endif %}
+              {% endblock %}
+            </ul>
+          </div>
+        </div>
+      {% endblock %}
+
+      <div class="container">
+        {% block breadcrumbs %}
+          <ul class="breadcrumb">
+            {% for breadcrumb_name, breadcrumb_url in breadcrumblist %}
+              {% if forloop.last %}
+                <li class="active"><a href="{{ breadcrumb_url }}">{{ breadcrumb_name }}</a></li>
+              {% else %}
+                <li><a href="{{ breadcrumb_url }}">{{ breadcrumb_name }}</a></li>
+              {% endif %}
+            {% empty %}
+                <li><a href="/">Query Omics Concept ID (OMOP Genomic, HGNC, NCBI_RefSeq, GENCODE, UniProt)</a></li>
+
+            {% endfor %}
+          </ul>
+        {% endblock %}
+
+        <!-- Content -->
+        <div id="content" role="main" aria-label="{% trans "content" %}">
+          {% block content %}
+	           <div>
+                <form action="../" method="get">
+                  {{ form }}
+                  <div class="form-group">
+                     <label>Search Text</label>
+                     <input type="text" id="queryid" name="keyword" class="form-control textinput textInput">
+                  </div>
+
+                  <div class="form-group">
+                        <fieldset>
+  <div>
+  <label for="search_type">Type of search&nbsp;&nbsp;</label>
+  <select name="type" id="search_type">
+    <option value="default">Default</option>
+    <option value="concept_id">Concept ID</option>
+    <option value="concept_synonym">Concept Synonym</option>
+    <option value="concept_code">Concept Code</option>
+  </select>
+  </div>
+  <div>
+  <label for="class_type">Concept Class&nbsp;&nbsp;</label>
+  <select name="class_type" id="class_type">
+    <option value="default">Default</option>
+    <option value="Gene DNA Variant">Gene DNA Variant</option>
+    <option value="Gene RNA Variant">Gene RNA Variant</option>
+    <option value="Gene Protein Variant">Gene Protein Variant</option>
+    <option value="gene">Gene</option>
+    <option value="transcript">Transcript</option>
+    <option value="protein">Protein</option>
+  </select>
+  </div>
+  <div>
+  <label for="vocab_type">Vocabulary&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</label>
+  <select name="vocab_type" id="vocab_type">
+    <option value="default">Default</option>
+    <option value="OMOP Genomic">OMOP Genomic</option>
+    <option value="HGNC">HGNC</option>
+    <option value="NCBI_RefSeq">NCBI_RefSeq</option>
+    <option value="GENCODE">GENCODE</option>
+    <option value="UniProt">UniProt</option>
+  </select>
+  </div>
+                      </fieldset>
+                </div>
+
+                  <div class="form-group">
+                      <button type="submit" class="btn btn-primary">Search</button>
+                  </div>
+		</form>
+
+          {% endblock content %}
+        </div><!-- /.content -->
+      </div><!-- /.container -->
+    </div><!-- ./wrapper -->
+
+    {% block script %}
+      <script type="application/json" id="drf_csrf">
+        {
+          "csrfHeaderName": "{{ csrf_header_name|default:'X-CSRFToken' }}",
+          "csrfToken": "{% if request %}{{ csrf_token }}{% endif %}"
+        }
+      </script>
+      <script src="{% static "rest_framework/js/jquery-3.7.1.min.js" %}"></script>
+      <script src="{% static "rest_framework/js/ajax-form.js" %}"></script>
+      <script src="{% static "rest_framework/js/csrf.js" %}"></script>
+      <script src="{% static "rest_framework/js/bootstrap.min.js" %}"></script>
+      <script src="{% static "rest_framework/js/prettify-min.js" %}"></script>
+      <script src="{% static "rest_framework/js/default.js" %}"></script>
+      <script src="{% static "rest_framework/js/load-ajax-form.js" %}"></script>
+    {% endblock %}
+
+  </body>
+  {% endblock %}
+</html>
