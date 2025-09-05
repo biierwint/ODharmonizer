@@ -39,6 +39,7 @@ ODharmonizer/
 |-- ODannotator/            # ODannotator Project folder
 |-- ODconverter/            # ODconverter Project folder
 |-- data-repositories/      # Database dump and SeqRepo data
+|-- compose.yml             # Docker compose file
 |-- README.md               # Readme file
 |-- .env.example            # Example file for setting up environment variables
 ```
