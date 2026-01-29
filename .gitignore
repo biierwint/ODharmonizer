@@ -1,0 +1,14 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Backup files
+*.bak
+*.bak1
+*.swp
+*~
+
+# (optional) Streamlit
+.streamlit/secrets.toml

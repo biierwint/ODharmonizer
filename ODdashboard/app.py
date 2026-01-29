@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
-
 import streamlit as st
+import os
+
 from db import get_engine
 import modules.demographics as demographics
 import modules.measurements as measurements
@@ -8,6 +8,7 @@ import modules.observations as observations
 import modules.specimens as specimens
 import modules.relationships as relationships
 
+os.environ["STREAMLIT_BROWSER_GATHERUSAGESTATS"] = "false"
 st.set_page_config(page_title="OMOP CDM Dashboard", layout="wide")
 
 # Initialize session state

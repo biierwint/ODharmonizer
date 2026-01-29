@@ -32,6 +32,8 @@ It takes in the person_source_value file which contains the person_source_value 
 Additionally, user can override two fields in the specimen table:
 (1) specimen_concept_id
 If None is provided, the default value is 4047495 (peripheral blood measurement).
+Plasma specimen: 4000626
+Buffy coat: 4122286
 (2) specimen_type_concept_id
 If None is provided, the default value is 32856 (Lab)
 
@@ -57,7 +59,7 @@ def main():
         parser.add_argument("--out", dest="outfile", required=True, help="output file OMOP CDM specimen table", type=str)
         parser.add_argument("--specimen", dest="specimen_concept_id", help="concept id for specimen", nargs="?", type=int, default=None)
         parser.add_argument("--sctid", dest="specimen_type_concept_id", help="concept id specimen_type_concept_id", nargs="?", type=int, default=None)
-        parser.add_argument("--prefix", dest="prefix", help="prefix to generate specimen_id [optional]", nargs="?", type=str, default=None)
+        parser.add_argument("--start", dest="start_index", help="start index for specimen_id", nargs="?", type=int, default=None)
 
         parser.add_argument("--dbwrite", action='store_true', help="write to database if this flag is present")
 
@@ -95,7 +97,7 @@ def main():
                            samples_mapping,
                            default_specimen_concept_id=args.specimen_concept_id,
                            default_specimen_type_concept_id=args.specimen_type_concept_id,
-                           prefix=args.prefix
+                           start_index=args.start_index
                        )
 
         specimen.to_csv(args.outfile, index=False)

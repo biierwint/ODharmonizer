@@ -106,7 +106,8 @@ class OMOP_ODmapper:
         default_observation_type_concept_id: int = None,
         default_value_as_concept_id: int = None,
         default_value_source_value: str = None,
-        prefix: str = None,
+        default_obs_event_field_concept_id=None,
+        start_index = None,
     ) -> pd.DataFrame:
         """
         Generate a DataFrame compatible with OMOP CDM `observation` table from the input.
@@ -115,12 +116,11 @@ class OMOP_ODmapper:
 
         records = []
 
-        if prefix is None:
-            prefix = '0'
-
-        prefix = int(prefix)  # integer prefix
         if "observation_id" not in df.columns:
-            df["observation_id"] = [int(f"{prefix}{i}") for i in range(1, len(df) + 1)]
+            if start_index is not None:
+                df['observation_id'] = range(start_index, start_index + len(df))
+            else:
+                df['observation_id'] = range(1, len(df)+1)
 
         for _, row in df.iterrows():
             obs_date = (
@@ -156,12 +156,18 @@ class OMOP_ODmapper:
                 if 'value_source_value' in df.columns and pd.notna(row['value_source_value'])
                 else 'Gene Expression Array'
             )
+            obs_event_field_concept_id = (
+                default_obs_event_field_concept_id
+                if default_obs_event_field_concept_id is not None
+                else row['obs_event_field_concept_id']
+                if 'obs_event_field_concept_id' in df.columns and pd.notna(row['obs_event_field_concept_id'])
+                else 1147049	# specimen.specimen_id
+            )
 
             if obs_concept_id is None:
                 raise ValueError("observation_concept_id is required (in column or as default)")
 
             record = {
-                #"observation_id": row.get('observation_id') if 'observation_id' in df.columns else int(f"{prefix}{row.get('person_id')}"),
                 "observation_id": row.get('observation_id'),
                 "person_id": row.get('person_id'),
                 "observation_concept_id": obs_concept_id,
@@ -182,7 +188,8 @@ class OMOP_ODmapper:
                 "qualifier_source_value": row.get('qualifier_source_value') if 'qualifier_source_value' in df.columns else None,
                 "value_source_value": value_source_value,
                 "observation_event_id": row.get('observation_event_id') if 'observation_event_id' in df.columns else None,
-                "obs_event_field_concept_id": row.get('obs_event_field_concept_id') if 'obs_event_field_concept_id' in df.columns else None
+                #"obs_event_field_concept_id": row.get('obs_event_field_concept_id') if 'obs_event_field_concept_id' in df.columns else None
+                "obs_event_field_concept_id": obs_event_field_concept_id
             }
 
             records.append(record)
@@ -194,7 +201,7 @@ class OMOP_ODmapper:
         df: pd.DataFrame,
         default_specimen_concept_id: int = None,
         default_specimen_type_concept_id: int = None,
-        prefix: str = None,
+        start_index = None,
     ) -> pd.DataFrame:
         """
         Generate a DataFrame compatible with OMOP CDM `specimen` table from the input.
@@ -203,12 +210,11 @@ class OMOP_ODmapper:
 
         records = []
 
-        if prefix is None:
-            prefix = '0'
-
-        prefix = int(prefix)  # integer prefix
         if "specimen_id" not in df.columns:
-            df["specimen_id"] = [int(f"{prefix}{i}") for i in range(1, len(df) + 1)]
+            if start_index is not None:
+                df['specimen_id'] = range(start_index, start_index + len(df))
+            else:
+                df['specimen_id'] = range(1, len(df)+1)
 
         for _, row in df.iterrows():
             specimen_date = (
@@ -232,7 +238,6 @@ class OMOP_ODmapper:
             )
 
             record = {
-                #"specimen_id": row.get('specimen_id') if 'specimen_id' in df.columns else int(f"{prefix}{row.get('person_id')}"),
                 "specimen_id": row.get('specimen_id'),
                 "person_id": row.get('person_id'),
                 "specimen_concept_id": specimen_concept_id,
@@ -295,6 +300,19 @@ class OMOP_ODmapper:
 
         return obs_df.set_index('person_id')[['measurement_event_id', 'observation_date']].to_dict('index')
 
+    def get_specimen_to_person_dict (self, df: pd.DataFrame) -> dict:
+        """
+        Load specimen dataframe (df) and return a mapping from person_id to
+        observation_event_id (specimen_id).
+        """
+        specimen_df = df.rename(columns={
+            'specimen_id': 'observation_event_id',
+        })
+        if not {'person_id', 'observation_event_id'}.issubset(specimen_df.columns):
+            raise ValueError("Specimen file must contain 'specimen_id', 'person_id' columns.")
+
+        return specimen_df.set_index('person_id')['observation_event_id'].to_dict()
+
     # map gene concept_id
     def get_concept_id (self, gene: str) -> int | None:
         try:
@@ -311,39 +329,86 @@ class OMOP_ODmapper:
             gene_map[gene] = self.get_concept_id(gene)
         return gene_map
 
-    def generate_gex_measurement_dataframe(self, expr_df, gene_map, obs_map, person_map, specimen_df, start_index=None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def generate_gex_measurement_dataframe(
+            self, expr_df, gene_map, obs_map, person_map, specimen_df,
+            start_index=None,
+            #high_concept_id=4328749,        # <-- High or Elevated, i.e. > 1 sd away
+            #low_concept_id=4267416,      # <-- Low, i.e. < 1 sd away
+            high_concept_id=4084765,        # <-- High or Elevated, i.e. > 1 sd away
+            low_concept_id=4083207,      # <-- Low, i.e. < 1 sd away
+            ref_concept_id=4084764   # <-- "within reference range"
+        ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    
         gene_col = expr_df.columns[0]
-
-        # Melt the expression matrix
-        long_df = expr_df.melt(id_vars=gene_col, var_name='person_source_value', value_name='value_as_number')
-
-        # Map person_id
+    
+        # -----------------------------------------------------------
+        # 1. COMPUTE Z-SCORES ACROSS SAMPLES FOR EACH GENE
+        # -----------------------------------------------------------
+        # expr_df: genes x samples (raw or normalized counts)
+        data_only = expr_df.set_index(gene_col)
+    
+        # z = (x - mean) / sd  (per gene)
+        zscores = data_only.sub(data_only.mean(axis=1), axis=0) \
+                           .div(data_only.std(axis=1).replace(0, np.nan), axis=0)
+    
+        # add z-scores back to the dataframe in long form later
+        zscores = zscores.reset_index()
+    
+        # -----------------------------------------------------------
+        # 2. Melt expression + z-score matrices
+        # -----------------------------------------------------------
+        long_expr = expr_df.melt(id_vars=gene_col, var_name='person_source_value', value_name='value_as_number')
+        long_z = zscores.melt(id_vars=gene_col, var_name='person_source_value', value_name='zscore')
+    
+        # merge so each row has expression + z-score
+        long_df = long_expr.merge(long_z, on=[gene_col, 'person_source_value'], how='left')
+    
+        # -----------------------------------------------------------
+        # 3. Assign up/down/no-change concept IDs
+        # -----------------------------------------------------------
+        def classify(z):
+            if pd.isna(z):
+                return None
+            if z > 1:
+                return high_concept_id
+            elif z < -1:
+                return low_concept_id
+            else:
+                return ref_concept_id
+    
+        long_df['value_as_concept_id'] = long_df['zscore'].map(classify)
+    
+        # -----------------------------------------------------------
+        # 4. ORIGINAL MAPPING LOGIC
+        # -----------------------------------------------------------
         long_df['person_id'] = long_df['person_source_value'].map(lambda psv: person_map.get(psv, {}).get('person_id'))
-
-        # Map gene to concept
+    
         long_df['measurement_concept_id'] = long_df[gene_col].map(gene_map)
         long_df['measurement_source_value'] = long_df[gene_col]
         long_df['measurement_source_concept_id'] = long_df['measurement_concept_id']
-
-        # Map observation-derived metadata
+    
         long_df['measurement_event_id'] = long_df['person_id'].map(lambda pid: obs_map.get(pid, {}).get('measurement_event_id'))
+    
         if "measurement_date" in person_map:
             long_df['measurement_date'] = long_df['person_source_value'].map(lambda psv: person_map.get(psv, {}).get('measurement_date'))
         else:
             long_df['measurement_date'] = long_df['person_id'].map(lambda pid: obs_map.get(pid, {}).get('observation_date'))
-
+    
         long_df['measurement_datetime'] = long_df['measurement_date']
-
+    
         # Map person-derived metadata
-        for col in ['unit_concept_id', 'unit_source_value', 'measurement_type_concept_id', 'meas_event_field_concept_id', 'measurement_time', 'operator_concept_id',  'value_as_concept_id', 'range_low', 'range_high', 'value_source_value']:
+        for col in [
+            'unit_concept_id', 'unit_source_value', 'measurement_type_concept_id',
+            'meas_event_field_concept_id', 'measurement_time', 'operator_concept_id',
+            'range_low', 'range_high', 'value_source_value'
+        ]:
             long_df[col] = long_df['person_source_value'].map(lambda psv: person_map.get(psv, {}).get(col))
-
-        # Visit/provider info from observation
+    
         long_df['visit_occurrence_id'] = long_df['person_id'].map(lambda pid: obs_map.get(pid, {}).get('visit_occurrence_id'))
         long_df['visit_detail_id'] = long_df['person_id'].map(lambda pid: obs_map.get(pid, {}).get('visit_detail_id'))
         long_df['provider_id'] = long_df['person_id'].map(lambda pid: obs_map.get(pid, {}).get('provider_id'))
-
-        # Exclude rows where concept is missing
+    
+        # remove rows without gene concept
         long_df = long_df[long_df['measurement_concept_id'].notna()].copy()
 
         # Assign measurement_id
@@ -351,18 +416,14 @@ class OMOP_ODmapper:
             long_df['measurement_id'] = range(start_index, start_index + len(long_df))
         else:
             long_df['measurement_id'] = None
-
-        # ----------------- FACT RELATIONSHIP CONSTRUCTION ------------------
-        # Build specimen_map from specimen_df (person_id ? specimen_id)
+    
+        # -----------------------------------------------------------
+        # 5. FACT RELATIONSHIP
+        # -----------------------------------------------------------
         specimen_map = dict(zip(specimen_df['person_id'], specimen_df['specimen_id']))
-
-        # Only keep rows where specimen_id is found
         long_df['specimen_id'] = long_df['person_id'].map(specimen_map)
         long_df = long_df[long_df['specimen_id'].notna()].copy()
-
-        # Generate fact_relationship entries
-        # 1147330 = Measurement, 1147306 = Specimen
-        # 32668 = Measurement to Specimen, 32669 = Specimen to Measurement
+    
         fr_measure_to_spec = pd.DataFrame({
             'domain_concept_id_1': 1147330,
             'fact_id_1': long_df['measurement_id'],
@@ -370,7 +431,7 @@ class OMOP_ODmapper:
             'fact_id_2': long_df['specimen_id'],
             'relationship_concept_id': 32668
         })
-
+     
         fr_spec_to_measure = pd.DataFrame({
             'domain_concept_id_1': 1147306,
             'fact_id_1': long_df['specimen_id'],
@@ -378,11 +439,12 @@ class OMOP_ODmapper:
             'fact_id_2': long_df['measurement_id'],
             'relationship_concept_id': 32669
         })
-
+     
         fact_relationship_df = pd.concat([fr_measure_to_spec, fr_spec_to_measure], ignore_index=True)
 
-        # ----------------- FINAL COLUMNS ------------------
-
+        # -----------------------------------------------------------
+        # 6. FINAL COLUMNS
+        # -----------------------------------------------------------
         omop_cols = [
             'measurement_id', 'person_id', 'measurement_concept_id', 'measurement_date',
             'measurement_datetime', 'measurement_time', 'measurement_type_concept_id',
@@ -439,7 +501,14 @@ class OMOP_ODmapper:
 
                 fields = line.strip().split('\t')
                 chrom, pos, var_id, ref, alt, qual, filt, info, fmt = fields[:9]
-                genotypes_raw = fields[9:]
+
+                # Get the genotypes_raw
+                #genotypes_raw = fields[9:]
+                fmt_fields = fmt.split(':')
+                gt_index = fmt_fields.index('GT') if 'GT' in fmt_fields else 0
+                # Extract only the genotype (GT) from each sample field
+                genotypes_raw = [g.split(':')[gt_index] for g in fields[9:]]
+
                 alt_alleles = alt.split(',')
                 all_alleles = [ref] + alt_alleles
 
@@ -569,7 +638,7 @@ class OMOP_ODmapper:
             'fact_id_1': long_df['measurement_id'],
             'domain_concept_id_2': 1147306,
             'fact_id_2': long_df['specimen_id'],
-            'relationship_id': 32668
+            'relationship_concept_id': 32668
         })
 
         fr_spec_to_measure = pd.DataFrame({
@@ -577,7 +646,7 @@ class OMOP_ODmapper:
             'fact_id_1': long_df['specimen_id'],
             'domain_concept_id_2': 1147330,
             'fact_id_2': long_df['measurement_id'],
-            'relationship_id': 32669
+            'relationship_concept_id': 32669
         })
 
         fact_relationship_df = pd.concat([fr_measure_to_spec, fr_spec_to_measure], ignore_index=True)

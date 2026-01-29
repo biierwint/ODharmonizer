@@ -17,8 +17,8 @@ RUN groupadd -g ${HOST_GID} ${USERNAME}
 RUN useradd -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash $USERNAME
 
 RUN mkdir /odconverter
-RUN mkdir -p /odconverter/tmp /odconverter/output
-RUN chown -R ${USERNAME} /odconverter /odconverter/tmp /odconverter/output
+RUN mkdir -p /odconverter/tmp /odconverter/output /odconverter/input
+RUN chown -R ${USERNAME}:${USERNAME} /odconverter /odconverter/tmp /odconverter/output /odconverter/input
 
 # Set the working directory
 WORKDIR /odconverter

@@ -35,10 +35,12 @@ If None is provided, the default value is 21495062 (Variant analysis method [Typ
 (2) observation_type_concept_id
 If None is provided, the default value is 32856 (Lab).
 (3) value_as_concept_id
-If None is provided, the default value is 42531068 (Gene Expression Array). For SNP Array, the value_as_concept_id = 42530745
+If None is provided, the default value is 42531068 (Gene Expression Array). For SNP Array, the value_as_concept_id = 42530745.
+For Sequencing, the value_as_concept_id = 42531016
 (4) value_source_value
 If None is provided, the default value is "Gene Expression Array"
-
+(5) oefid (obs_event_field_concept_id)
+If None is provided, the default value is 1147049 (specimen.specimen_id)
 Example usage: ./create-observation.py --in person_source.csv  --out observation.csv
 
 '''
@@ -63,7 +65,9 @@ def main():
         parser.add_argument("--otid", dest="obs_type_conceptid", help="concept id to fill for observation_type_concept_id", nargs="?", type=int, default=None)
         parser.add_argument("--vid", dest="value_conceptid", help="concept id to fill value_as_concept_id", nargs="?", type=int, default=None)
         parser.add_argument("--vsource", dest="value_source_value", help="value_source_value of value_as_concept_id", nargs="?", type=str, default=None)
-        parser.add_argument("--prefix", dest="prefix", help="prefix to generate observation_id [optional]", nargs="?", type=str, default=None)
+        parser.add_argument("--specimen", dest="specimenfile", required=True, help="specimen table file containing specimen_id and person_id (.csv)", type=str)
+        parser.add_argument("--oefid", dest="obs_event_field_concept_id", help="concept id for obs_event_field_concept_id",nargs="?", type=int, default=None)
+        parser.add_argument("--start", dest="start_index", help="start index for observation_id", nargs="?", type=int, default=None)
         parser.add_argument("--dbwrite", action='store_true', help="write to database if this flag is present")
 
         # Show help if no arguments are provided
@@ -102,13 +106,24 @@ def main():
         if args.value_source_value is not None and 'value_source_value' in person_df.columns:
             warnings.warn("value_source_value exists in both command-line parameter and person file. The parameter value will override the column.")
 
+        if args.obs_event_field_concept_id is not None and 'obs_event_field_concept_id' in person_df.columns:
+            warnings.warn("obs_event_field_concept_id exists in both command-line parameter and person file. The parameter value will override the column.")
+
+        # load specimen table (specimenfile)
+        specimen_df = pd.read_csv(args.specimenfile, on_bad_lines='warn')
+        specimen_map = loader.get_specimen_to_person_dict (specimen_df)
+
+        # Merged samples_mapping and specimen_map
+        samples_mapping['observation_event_id'] = samples_mapping['person_id'].map(specimen_map)
+
         observations = loader.generate_observation_dataframe (
                            samples_mapping,
                            default_observation_concept_id=args.obs_conceptid,
                            default_observation_type_concept_id = args.obs_type_conceptid,
                            default_value_as_concept_id=args.value_conceptid,
                            default_value_source_value=args.value_source_value,
-                           prefix=args.prefix
+                           default_obs_event_field_concept_id=args.obs_event_field_concept_id,
+                           start_index=args.start_index
                        )
 
         observations.to_csv(args.outfile, index=False)
