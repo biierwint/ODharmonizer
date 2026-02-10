@@ -201,6 +201,7 @@ class OMOP_ODmapper:
         df: pd.DataFrame,
         default_specimen_concept_id: int = None,
         default_specimen_type_concept_id: int = None,
+        source_value = None,
         start_index = None,
     ) -> pd.DataFrame:
         """
@@ -236,6 +237,13 @@ class OMOP_ODmapper:
                 if 'specimen_type_concept_id' in df.columns and pd.notna(row['specimen_type_concept_id'])
                 else 32856
             )
+            specimen_source_value = (
+                source_value
+                if source_value is not None
+                else row['specimen_source_value']
+                if 'specimen_source_value' in df.columns and pd.notna(row['specimen_source_value'])
+                else None
+            )
 
             record = {
                 "specimen_id": row.get('specimen_id'),
@@ -249,7 +257,8 @@ class OMOP_ODmapper:
                 "anatomic_site_concept_id": row.get('anatomic_site_concept_id') if 'anatomic_site_concept_id' in df.columns else None,
                 "disease_status_concept_id": row.get('disease_status_concept_id') if 'disease_status_concept_id' in df.columns else None,
                 "specimen_source_id": row.get('specimen_source_id') if 'specimen_source_id' in df.columns else None,
-                "specimen_source_value": row.get('specimen_source_value') if 'specimen_source_value' in df.columns else None,
+                #"specimen_source_value": row.get('specimen_source_value') if 'specimen_source_value' in df.columns else None,
+                "specimen_source_value": specimen_source_value,
                 "unit_source_value": row.get('unit_source_value') if 'unit_source_value' in df.columns else None,
                 "anatomic_site_source_value": row.get('anatomic_site_source_value') if 'anatomic_site_source_value' in df.columns else None,
                 "disease_status_source_value": row.get('disease_status_source_value') if 'disease_status_source_value' in df.columns else None,

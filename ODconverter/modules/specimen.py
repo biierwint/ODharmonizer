@@ -52,6 +52,7 @@ def run_specimen_step(enable_download):
     # Optional parameters
     specimen_concept_id = st.text_input("Specimen Concept ID", "4047495")
     specimen_type_concept_id = st.text_input("Specimen Type Concept ID", "32856")
+    specimen_source_value = st.text_input("Specimen Source Value")
     start_index = st.text_input("Specimen ID Start Index (optional, integer value)", "1")
 
     output_method = st.selectbox("Output destination for specimen.csv", ["Local", "S3 URL"], index=0)
@@ -107,6 +108,8 @@ def run_specimen_step(enable_download):
             cmd_specimen.extend(["--specimen", specimen_concept_id])
         if specimen_type_concept_id:
             cmd_specimen.extend(["--sctid", specimen_type_concept_id])
+        if specimen_source_value:
+            cmd_specimen.extend(["--specimen_source_value", specimen_source_value])
         if start_index:
             cmd_specimen.extend(["--start", start_index])
 

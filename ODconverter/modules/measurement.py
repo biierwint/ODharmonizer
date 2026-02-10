@@ -49,7 +49,7 @@ def run_gene_expression_step(df_obs, person_path, specimen_path, enable_download
     elif input_method == "Local Path":
         gex_local_path = st.text_input("Enter full local path to GEX data", value="/odconverter/input/annotated-gex.csv")
 
-    meas_event_field_concept_id = st.text_input("Meas Event Field Concept ID", "1147165")
+    #meas_event_field_concept_id = st.text_input("Meas Event Field Concept ID", "1147165")
     unit_concept_id = st.text_input("Unit Concept ID", "37533750")
     unit_source_value = st.text_input("Unit Source Value", "TRANSCRIPTS PER MILLION FORMULA")
     measurement_type_concept_id = st.text_input("Measurement Type Concept ID", "32856")
@@ -100,7 +100,7 @@ def run_gene_expression_step(df_obs, person_path, specimen_path, enable_download
                 "--specimen", specimen_tmp,
                 "--out", out_path,
                 "--outfact", fact_path,
-                "--mefid", meas_event_field_concept_id,
+                #"--mefid", meas_event_field_concept_id,
                 "--uid", unit_concept_id,
                 "--uvalue", unit_source_value,
                 "--mtid", measurement_type_concept_id,
@@ -150,7 +150,7 @@ def run_genomic_step(df_obs, person_path, specimen_path, enable_download):
     elif input_method == "Local Path":
         vcf_local_path = st.text_input("Enter full local path to VCF", value="/absolute/path/to/input.vcf")
 
-    meas_event_field_concept_id = st.text_input("Meas Event Field Concept ID", "1147165")
+    #meas_event_field_concept_id = st.text_input("Meas Event Field Concept ID", "1147165")
     measurement_type_concept_id = st.text_input("Measurement Type Concept ID", "32856")
     start_index = st.number_input("Start Measurement ID from", value=1, step=1)
 
@@ -199,7 +199,7 @@ def run_genomic_step(df_obs, person_path, specimen_path, enable_download):
                 "--specimen", specimen_tmp,
                 "--out", out_path,
                 "--outfact", fact_path,
-                "--mefid", meas_event_field_concept_id,
+                #"--mefid", meas_event_field_concept_id,
                 "--mtid", measurement_type_concept_id,
                 "--start", str(start_index)
             ]

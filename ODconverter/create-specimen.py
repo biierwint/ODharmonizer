@@ -58,6 +58,7 @@ def main():
         parser.add_argument("--in", dest="infile", required=True, help="input file containing person_source_value (.csv)", type=str)
         parser.add_argument("--out", dest="outfile", required=True, help="output file OMOP CDM specimen table", type=str)
         parser.add_argument("--specimen", dest="specimen_concept_id", help="concept id for specimen", nargs="?", type=int, default=None)
+        parser.add_argument("--specimen_source_value", dest="specimen_source_value", help="Specimen Source Value", nargs="?", type=str, default=None)
         parser.add_argument("--sctid", dest="specimen_type_concept_id", help="concept id specimen_type_concept_id", nargs="?", type=int, default=None)
         parser.add_argument("--start", dest="start_index", help="start index for specimen_id", nargs="?", type=int, default=None)
 
@@ -97,6 +98,7 @@ def main():
                            samples_mapping,
                            default_specimen_concept_id=args.specimen_concept_id,
                            default_specimen_type_concept_id=args.specimen_type_concept_id,
+                           source_value=args.specimen_source_value,
                            start_index=args.start_index
                        )
 
