@@ -32,6 +32,7 @@ It takes in the person_source_value file which contains the person_source_value 
 Additionally, user can override three fields in the measurement table:
 (1) meas_event_field_concept_id
 If None is provided, the default value is 1147165 (observation.observation_id).
+measurement should be linkked to specimen. The default value will be changed to: 1147049 (specimen.specimen_id)
 (2) measurement_type_concept_id
 If None is provided, the default value is 32856 (Lab).
 (3) unit_concept_id
@@ -114,7 +115,8 @@ def main():
                 warnings.warn("meas_event_field_concept_id exists in both command-line parameter and input file. The parameter value will override the column.")
             person_df['meas_event_field_concept_id'] = args.meas_event_field_concept_id
         elif 'meas_event_field_concept_id' not in person_df.columns:
-            person_df['meas_event_field_concept_id'] = 1147165	# default value
+            #person_df['meas_event_field_concept_id'] = 1147165	# default value
+            person_df['meas_event_field_concept_id'] = 1147409	# default value
 
         if args.measurement_type_concept_id is not None:
             if 'measurement_type_concept_id' in person_df.columns:
@@ -152,7 +154,8 @@ def main():
 
         # load observation table (obsfile)
         observation_df = pd.read_csv(args.obsfile, on_bad_lines='warn')
-        obs_map = loader.get_observation_to_measurement_dict (observation_df)
+        #obs_map = loader.get_observation_to_measurement_dict (observation_df)
+        obs_map = dict(zip(observation_df['person_id'], observation_df['observation_id']))
 
         # read specimen file
         specimen_df = pd.read_csv(args.specimenfile, on_bad_lines='warn')

@@ -295,6 +295,7 @@ class OMOP_ODmapper:
         except Exception as e:
             print(f"Fail: Failed to insert {table_name}: {e}")
 
+    ### deprecated
     def get_observation_to_measurement_dict (self, df: pd.DataFrame) -> dict:
         """
         Load observation dataframe (df) and return a mapping from person_id to
@@ -390,13 +391,19 @@ class OMOP_ODmapper:
         # -----------------------------------------------------------
         # 4. ORIGINAL MAPPING LOGIC
         # -----------------------------------------------------------
+        # Create specimen map
+        specimen_map = dict(zip(specimen_df['person_id'], specimen_df['specimen_id']))
+
         long_df['person_id'] = long_df['person_source_value'].map(lambda psv: person_map.get(psv, {}).get('person_id'))
     
         long_df['measurement_concept_id'] = long_df[gene_col].map(gene_map)
         long_df['measurement_source_value'] = long_df[gene_col]
         long_df['measurement_source_concept_id'] = long_df['measurement_concept_id']
     
-        long_df['measurement_event_id'] = long_df['person_id'].map(lambda pid: obs_map.get(pid, {}).get('measurement_event_id'))
+        # Instead of measurement->observation, now we take: measurement -> specimen. The link between measurement and observation will be
+        # done through fact_relationship table.
+        #long_df['measurement_event_id'] = long_df['person_id'].map(lambda pid: obs_map.get(pid, {}).get('measurement_event_id'))
+        long_df['measurement_event_id'] = long_df['person_id'].map(lambda pid: specimen_map.get(pid, {}).get('specimen_id'))
     
         if "measurement_date" in person_map:
             long_df['measurement_date'] = long_df['person_source_value'].map(lambda psv: person_map.get(psv, {}).get('measurement_date'))
@@ -429,24 +436,28 @@ class OMOP_ODmapper:
         # -----------------------------------------------------------
         # 5. FACT RELATIONSHIP
         # -----------------------------------------------------------
-        specimen_map = dict(zip(specimen_df['person_id'], specimen_df['specimen_id']))
-        long_df['specimen_id'] = long_df['person_id'].map(specimen_map)
-        long_df = long_df[long_df['specimen_id'].notna()].copy()
+        #specimen_map = dict(zip(specimen_df['person_id'], specimen_df['specimen_id']))
+        long_df['observation_id'] = long_df['person_id'].map(obs_map)
+        long_df = long_df[long_df['observation_id'].notna()].copy()
     
-        fr_measure_to_spec = pd.DataFrame({
+        fr_measure_to_obs = pd.DataFrame({
             'domain_concept_id_1': 1147330,
             'fact_id_1': long_df['measurement_id'],
-            'domain_concept_id_2': 1147306,
-            'fact_id_2': long_df['specimen_id'],
-            'relationship_concept_id': 32668
+            #'domain_concept_id_2': 1147306,
+            'domain_concept_id_2': 1147304,
+            'fact_id_2': long_df['observation_id'],
+            #'relationship_concept_id': 32668
+            'relationship_concept_id': 581411
         })
      
-        fr_spec_to_measure = pd.DataFrame({
-            'domain_concept_id_1': 1147306,
-            'fact_id_1': long_df['specimen_id'],
+        fr_obs_to_measure = pd.DataFrame({
+            #'domain_concept_id_1': 1147306,
+            'domain_concept_id_1': 1147304,
+            'fact_id_1': long_df['observation_id'],
             'domain_concept_id_2': 1147330,
             'fact_id_2': long_df['measurement_id'],
-            'relationship_concept_id': 32669
+            #'relationship_concept_id': 32669
+            'relationship_concept_id': 581410
         })
      
         fact_relationship_df = pd.concat([fr_measure_to_spec, fr_spec_to_measure], ignore_index=True)
@@ -554,6 +565,9 @@ class OMOP_ODmapper:
 
 
     def generate_genomic_measurement_dataframe (self, genomic_df, id_map, obs_map, person_map, specimen_df, start_index = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+        # Build specimen_map from specimen_df (person_id ? specimen_id)
+        specimen_map = dict(zip(specimen_df['person_id'], specimen_df['specimen_id']))
+
         id_col = genomic_df.columns[0]
 
         # Melt using person_source_value columns directly (create a dataframe with fields: person_source_value and value_as_number)
@@ -589,7 +603,10 @@ class OMOP_ODmapper:
         long_df['measurement_source_concept_id'] = long_df['measurement_concept_id']
 
         # Map observation info by person_id (from obs_map)
-        long_df['measurement_event_id'] = long_df['person_id'].map(lambda pid: obs_map.get(pid, {}).get('measurement_event_id'))
+        #long_df['measurement_event_id'] = long_df['person_id'].map(lambda pid: obs_map.get(pid, {}).get('measurement_event_id'))
+        # Map specimen info by person_id (from specimen_map)
+        long_df['measurement_event_id'] = long_df['person_id'].map(lambda pid: specimen_map.get(pid, {}).get('specimen_id'))
+
         if "measurement_date" in person_map:
             long_df['measurement_date'] = long_df['person_source_value'].map(lambda psv: person_map.get(psv, {}).get('measurement_date'))
         else:
@@ -636,26 +653,33 @@ class OMOP_ODmapper:
         specimen_map = dict(zip(specimen_df['person_id'], specimen_df['specimen_id']))
 
         # Only keep rows where specimen_id is found
-        long_df['specimen_id'] = long_df['person_id'].map(specimen_map)
-        long_df = long_df[long_df['specimen_id'].notna()].copy()
+        #long_df['specimen_id'] = long_df['person_id'].map(specimen_map)
+        long_df['observation_id'] = long_df['person_id'].map(obs_map)
+        #long_df = long_df[long_df['specimen_id'].notna()].copy()
+        long_df = long_df[long_df['observation_id'].notna()].copy()
 
         # Generate fact_relationship entries
-        # 1147330 = Measurement, 1147306 = Specimen
+        # 1147330 = Measurement, 1147306 = Specimen, 1147304 = Observation
         # 32668 = Measurement to Specimen, 32669 = Specimen to Measurement
-        fr_measure_to_spec = pd.DataFrame({
+        # 581411 = Measurement to Observation, 581410 = Observation to Measurement
+        fr_measure_to_obs = pd.DataFrame({
             'domain_concept_id_1': 1147330,
             'fact_id_1': long_df['measurement_id'],
-            'domain_concept_id_2': 1147306,
-            'fact_id_2': long_df['specimen_id'],
-            'relationship_concept_id': 32668
+            #'domain_concept_id_2': 1147306,
+            'domain_concept_id_2': 1147304,
+            'fact_id_2': long_df['observation_id'],
+            #'relationship_concept_id': 32668
+            'relationship_concept_id': 581411
         })
-
-        fr_spec_to_measure = pd.DataFrame({
-            'domain_concept_id_1': 1147306,
-            'fact_id_1': long_df['specimen_id'],
+     
+        fr_obs_to_measure = pd.DataFrame({
+            #'domain_concept_id_1': 1147306,
+            'domain_concept_id_1': 1147304,
+            'fact_id_1': long_df['observation_id'],
             'domain_concept_id_2': 1147330,
             'fact_id_2': long_df['measurement_id'],
-            'relationship_concept_id': 32669
+            #'relationship_concept_id': 32669
+            'relationship_concept_id': 581410
         })
 
         fact_relationship_df = pd.concat([fr_measure_to_spec, fr_spec_to_measure], ignore_index=True)
